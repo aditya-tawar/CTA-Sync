@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local data and credentials
+users.json
+*.db
+.streamlit/secrets.toml
+
+# Generated reports and client files
+*.xlsx
+*.csv
+*.eml

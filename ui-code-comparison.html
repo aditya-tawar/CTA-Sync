@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CTA Sync - code comparison</title><style>body{font:15px system-ui;background:#f5f8fc;color:#182b49;margin:32px}main{max-width:1600px;margin:auto}h1{color:#144da0}h2{font-size:18px;margin:30px 0 12px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}article{background:white;border:1px solid #dce5ef;border-radius:10px;overflow:hidden;min-width:0}h3{font-size:12px;padding:12px 18px;margin:0;background:#edf3fa}article:first-child h3{border-top:3px solid #b64a57}article:last-child h3{border-top:3px solid #144da0}pre{padding:18px;margin:0;overflow:auto;font:13px/1.6 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:750px){.pair{grid-template-columns:1fr}body{margin:16px}}</style><main><h1>CTA Sync: old and new code</h1><p>Selected changes from the UI refresh. Old excerpts were captured during source inspection in this conversation; new excerpts reflect the current files. Some excerpts omit surrounding code and include explanatory comments. This is not a complete Git diff: this folder has no Git repository or saved original snapshot.</p><section><h2>app.py - startup configuration</h2><div class="pair"><article><h3>OLD</h3><pre>from cta_app.app import run_app
+
+
+if __name__ == &quot;__main__&quot;:
+    run_app()
+</pre></article><article><h3>NEW</h3><pre>&quot;&quot;&quot;Streamlit entry point: configure the page before importing UI dependencies.&quot;&quot;&quot;
+import streamlit as st
+
+st.set_page_config(
+    page_title=&quot;CTA Sync | Indegene&quot;,
+    layout=&quot;wide&quot;,
+    initial_sidebar_state=&quot;collapsed&quot;,
+)
+
+from cta_app.app import run_app
+
+if __name__ == &quot;__main__&quot;:
+    run_app()
+</pre></article></div></section><section><h2>cta_app/ui/styles.py - brand colors</h2><div class="pair"><article><h3>OLD</h3><pre>.stApp { background: linear-gradient(135deg, white); }
+section[data-testid=&quot;stSidebar&quot;] {display: none;}
+
+.header {
+    background: linear-gradient(#0047AB 100%);
+    color: white; padding: 40px; border-radius: 15px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    text-align: center;
+}</pre></article><article><h3>NEW</h3><pre>:root { --brand:#144da0; --cyan:#13b9df; --pink:#eb008b; --ink:#182b49; --muted:#63758c; --line:#dce5ef; }
+.stApp { background:#f5f8fc; color:var(--ink); }
+[data-testid=&quot;stHeader&quot;] { background:rgba(245,248,252,.95); }
+section[data-testid=&quot;stSidebar&quot;] { display:none; }
+[data-testid=&quot;stMainBlockContainer&quot;] { max-width:1240px; padding:2rem 2.5rem 3rem; }
+
+.brand-rule { height:3px; background:linear-gradient(90deg,var(--brand) 0 72%,var(--cyan) 72% 92%,var(--pink) 92%); margin:12px 0 28px; border-radius:4px; }</pre></article></div></section><section><h2>cta_app/components/file_uploader.py - accessible upload controls</h2><div class="pair"><article><h3>OLD</h3><pre>/* Original CSS hid upload controls */
+[data-testid=&quot;stFileUploader&quot;] label {
+    display: none !important;
+}
+
+campaign_files = st.file_uploader(
+    &quot;&quot;, accept_multiple_files=True, type=ACCEPTED_CAMPAIGN_TYPES,
+    key=f&quot;campaign_up_{st.session_state.campaign_uploader_key}&quot;,
+)</pre></article><article><h3>NEW</h3><pre># The CSS that hid upload controls was removed.
+campaign_files = st.file_uploader(
+    &quot;Campaign files&quot;, label_visibility=&quot;collapsed&quot;,
+    accept_multiple_files=True, type=ACCEPTED_CAMPAIGN_TYPES,
+    key=f&quot;campaign_up_{st.session_state.campaign_uploader_key}&quot;,
+)</pre></article></div></section><section><h2>cta_app/components/progress.py - progress rendering</h2><div class="pair"><article><h3>OLD</h3><pre># Previous implementation used an iframe with its own CSS.
+step_name = [&quot;Upload Assets&quot;, &quot;Campaign Details&quot;, &quot;Review&quot;, &quot;Validation&quot;]
+
+for step, st_name in enumerate(step_name, start=1):
+    if step &lt; st.session_state.current_step:
+        cls = &quot;step completed&quot;
+    elif step == st.session_state.current_step:
+        cls = &quot;step active&quot;
+    else:
+        cls = &quot;step&quot;
+
+# ...build HTML and circles...
+components.html(html, height=180)</pre></article><article><h3>NEW</h3><pre>&quot;&quot;&quot;Accessible workflow progress using the shared page theme.&quot;&quot;&quot;
+import streamlit as st
+
+TOTAL_STEPS = 4
+
+def render_progress_bar():
+    current = st.session_state.current_step
+    names = [&quot;Upload assets&quot;, &quot;Campaign details&quot;, &quot;Review&quot;, &quot;Validation&quot;]
+    steps = []
+    for number, name in enumerate(names, 1):
+        state = &quot;completed&quot; if number &lt; current else &quot;active&quot; if number == current else &quot;&quot;
+        aria = &#x27; aria-current=&quot;step&quot;&#x27; if number == current else &quot;&quot;
+        marker = &quot;&amp;#10003;&quot; if number &lt; current else str(number)
+        steps.append(f&#x27;&lt;div class=&quot;workflow-step {state}&quot;{aria}&gt;&lt;strong&gt;{marker}&lt;/strong&gt;{name}&lt;/div&gt;&#x27;)
+    st.markdown(&#x27;&lt;nav class=&quot;workflow-steps&quot; aria-label=&quot;Validation progress&quot;&gt;&#x27; + &quot;&quot;.join(steps) + &#x27;&lt;/nav&gt;&#x27;, unsafe_allow_html=True)
+</pre></article></div></section><section><h2>cta_app/pages/admin.py - navigation</h2><div class="pair"><article><h3>OLD</h3><pre>menu = st.sidebar.selectbox(
+    &quot;Menu&quot;,
+    [
+        &quot;Users&quot;,
+        &quot;Roles&quot;,
+        &quot;Assign Roles&quot;,
+        &quot;Taxonomy Rules&quot;,
+        &quot;Access Check&quot;,
+        &quot;Allowed Domains&quot;,
+    ],
+)</pre></article><article><h3>NEW</h3><pre>menu = st.selectbox(
+    &quot;Menu&quot;,
+    [
+        &quot;Users&quot;,
+        &quot;Roles&quot;,
+        &quot;Assign Roles&quot;,
+        &quot;Taxonomy Rules&quot;,
+        &quot;Access Check&quot;,
+        &quot;Allowed Domains&quot;,
+    ],
+)</pre></article></div></section><section><h2>cta_app/pages/cta_sync.py - export selected rows</h2><div class="pair"><article><h3>OLD</h3><pre>qa_buffer, qa_email_name = build_qa_workbook(
+    st.session_state.campaign_files_data,
+    active_csv_df,
+    cta_data,
+    st.session_state.get(&quot;col_name&quot;, &quot;&quot;),
+    campaign_name=campaign_name
+)</pre></article><article><h3>NEW</h3><pre>qa_buffer, qa_email_name = build_qa_workbook(
+    st.session_state.campaign_files_data,
+    active_csv_df,
+    st.session_state.get(&quot;export_selected_ctas&quot;, cta_data),
+    st.session_state.get(&quot;col_name&quot;, &quot;&quot;),
+    campaign_name=campaign_name
+)</pre></article></div></section><section><h2>.streamlit/config.toml - new theme configuration</h2><div class="pair"><article><h3>OLD</h3><pre># No theme configuration was present.</pre></article><article><h3>NEW</h3><pre>[theme]
+base = &quot;light&quot;
+primaryColor = &quot;#144da0&quot;
+backgroundColor = &quot;#f5f8fc&quot;
+secondaryBackgroundColor = &quot;#edf3fa&quot;
+textColor = &quot;#182b49&quot;
+font = &quot;sans serif&quot;
+</pre></article></div></section></main></html>
