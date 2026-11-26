@@ -147,7 +147,8 @@ def _render_access_check(repository: AdminAccessRepository) -> None:
 
 
 def render_admin_console() -> None:
-    st.markdown('<section class="workspace-hero"><div class="eyebrow">CTA Sync administration</div><h1>Access & governance</h1><p>Manage people, roles, campaign access, and trusted domains.</p></section>', unsafe_allow_html=True)
+    st.title("Administration")
+    st.caption("Manage user records, roles, access rules, and allowed domains.")
 
     menu = st.selectbox(
         "Menu",

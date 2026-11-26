@@ -1,9 +1,9 @@
+from html import escape
 import streamlit as st
 from cta_app.domain.cta_matching import ACCEPTED_CAMPAIGN_TYPES
 
 
 def render_file_uploader():
-
     # ── Session-state defaults ────────────────────────────────────────
     # Must come BEFORE any widget or callback that reads these keys
     if "campaign_files_data" not in st.session_state:
@@ -38,11 +38,7 @@ def render_file_uploader():
     #  Left column – HTML campaign files
     # ─────────────────────────────────────────────────────────────────
     with upcol1, st.container(border=True):
-        st.markdown(
-            '<div class="upload-heading"><span class="upload-icon" aria-hidden="true">EML</span>'
-            '<div><h3>Campaign assets</h3><p>HTML, HTM or EML &middot; Multiple files supported</p></div></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="upload-heading"><div class="eyebrow">01 &middot; Campaign</div><h3>Campaign assets</h3><p>Upload one or more HTML, HTM or EML files.</p></div>', unsafe_allow_html=True)
         campaign_files = st.file_uploader(
             "Campaign files", label_visibility="collapsed", accept_multiple_files=True, type=ACCEPTED_CAMPAIGN_TYPES,
             key=f"campaign_up_{st.session_state.campaign_uploader_key}",
@@ -66,7 +62,7 @@ def render_file_uploader():
                 with c1:
                     st.markdown(
                         f'<div class="file-info">'
-                        f'<span class="file-info-text">✅ <b>{filename}</b> ({size} bytes)</span>'
+                        f'<span class="file-info-text"><b>{escape(filename)}</b> ({size / 1024:.1f} KB)</span>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
@@ -75,7 +71,7 @@ def render_file_uploader():
                         "Remove",
                         key=f"remove_campaign_{filename}",
                         on_click=remove_campaign,
-                        args=(filename,),type='primary'
+                        args=(filename,),type='secondary'
                     )
 
         st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
@@ -91,11 +87,7 @@ def render_file_uploader():
         st.toast(f"Removed {filename}", icon="✅")
 
     with upcol2, st.container(border=True):
-        st.markdown(
-            '<div class="upload-heading"><span class="upload-icon reference" aria-hidden="true">CSV</span>'
-            '<div><h3>Claravine reference</h3><p>CSV tracking sheets &middot; Multiple files supported</p></div></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="upload-heading"><div class="eyebrow">02 &middot; Reference</div><h3>Claravine tracking sheets</h3><p>Upload one or more Claravine CSV files.</p></div>', unsafe_allow_html=True)
         claravine_files = st.file_uploader(
             "Claravine CSV files", label_visibility="collapsed", type=["csv"], accept_multiple_files=True,
             key=f"claravine_up_{st.session_state.claravine_uploader_key}",
@@ -122,8 +114,8 @@ def render_file_uploader():
                 with c1:
                     st.markdown(
                         f'<div class="file-info">'
-                        f'<span class="file-info-text">✅ '
-                        f'<b>{filename}</b> ({size} bytes)</span>'
+                        f'<span class="file-info-text">'
+                        f'<b>{escape(filename)}</b> ({size / 1024:.1f} KB)</span>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
@@ -133,26 +125,10 @@ def render_file_uploader():
                         key=f"remove_claravine_{filename}",
                         on_click=remove_claravine,
                         args=(filename,),
-                        type='primary',
+                        type='secondary',
                     )
 
-    # Warning shown below both columns when either file is missing
     if not claravine_stored or not st.session_state.campaign_files_data:
-        st.markdown(
-            '<div class="alert-warning">⚠️ Please upload at least one campaign file '
-            'and the Claravine file to continue</div>',
-            unsafe_allow_html=True,
-        )
-
-
-    # ═════════════════════════════════════════════════════════════════
-    #  Next Step button
-    # ═════════════════════════════════════════════════════════════════
-    # if st.session_state.campaign_files_data and claravine_stored:
-    #     col1, col2, col3 = st.columns([2, 1, 1])
-    #     with col3:
-    #         if st.button("Next Step →", use_container_width=True,type='primary'):
-    #
-    #             st.session_state.cta_data = None
-    #             st.session_state.current_step = 2
-    #             st.rerun()
+        st.caption("To continue, add at least one campaign asset and one Claravine CSV.")
+    else:
+        st.caption(f"Ready for review: {len(st.session_state.campaign_files_data)} campaign asset(s) and {len(st.session_state.claravine_files_data)} reference file(s).")

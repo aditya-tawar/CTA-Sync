@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit_cookies_manager import CookieManager
 
 from cta_app.core.assets import resolve_asset_path
-from cta_app.components.branding import render_brand_header
+from cta_app.components.branding import image_src, render_app_bar
 from cta_app.ui.styles import render_cta_sync_styles
 from cta_app.pages.admin import render_admin_console
 from cta_app.pages.cta_sync import render_cta_sync_page
@@ -60,6 +60,8 @@ APP_STATE_KEYS_TO_CLEAR_ON_LOGOUT = (
     "claravine_data",
     "res_df",
     "filter",
+    "results_source",
+    "results_search",
     "export_selected_ctas",
     "validation_time",
 )
@@ -137,49 +139,52 @@ def render_logo(width: int = 250) -> None:
 
 
 def render_logout_button(cookies: CookieManager) -> None:
-    if st.button("🚪 Logout", type="secondary", key="logout", use_container_width=True):
+    if st.button("Sign out", type="secondary", key="logout", use_container_width=True):
         logout_user(cookies)
 
 
 def render_authenticated_app(cookies: CookieManager) -> None:
-    header_left, header_right = st.columns([9, 1])
+    header_left, header_right = st.columns([8, 1.2], vertical_alignment="center")
     with header_left:
-        render_brand_header()
+        render_app_bar(st.session_state.username, st.session_state.role)
     with header_right:
         render_logout_button(cookies)
 
-    st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
     if st.session_state.role == "admin":
         render_admin_console()
     elif st.session_state.role == "user":
         render_cta_sync_page()
     else:
-        st.error("❌ Unknown role detected. Contact support.")
+        st.error("Unknown role detected. Contact support.")
         logout_user(cookies)
 
 
 def render_login_form(cookies: CookieManager) -> None:
-    render_brand_header()
-    st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
-    story, form_column = st.columns([1.15, 1], gap="large")
+    st.markdown('<div style="height:4vh"></div>', unsafe_allow_html=True)
+    story, sign_in = st.columns([1.1, 1], gap="large", vertical_alignment="center")
     with story:
         st.markdown(
-            '<section class="login-story"><div class="eyebrow">Indegene &middot; CTA Sync</div>'
-            '<h1>Confidence in<br>every campaign.</h1>'
-            '<p>A clearer path from campaign assets to validated links.</p>'
-            '<div class="feature-list"><span>01 &nbsp; Bring HTML, email, and tracking together</span>'
-            '<span>02 &nbsp; Find destination and tracking mismatches</span>'
-            '<span>03 &nbsp; Share a detailed Excel QA report</span></div></section>',
+            '<section class="login-panel">'
+            f'<img class="banner" src="{image_src("cta_sync_banner.png")}" alt="CTA Sync">'
+            '<h1>One workspace.<br>A clearer campaign review.</h1>'
+            '<p>Compare campaign CTAs with Claravine references and turn validation findings into actionable QA reports.</p>'
+            '<div class="login-points"><span><b>01</b>Upload HTML or email campaign assets</span>'
+            '<span><b>02</b>Compare destinations and tracking codes</span>'
+            '<span><b>03</b>Review findings and share an Excel report</span></div></section>',
             unsafe_allow_html=True,
         )
-    with form_column:
-        st.subheader("Welcome back")
-        st.caption("Sign in to your campaign validation workspace.")
+    with sign_in:
+        st.markdown(
+            '<div class="login-card-head">'
+            f'<img src="{image_src("indegene_logo_tight.png")}" alt="Indegene">'
+            '<h2>Welcome to CTA Sync</h2><p>Sign in to your campaign validation workspace.</p></div>',
+            unsafe_allow_html=True,
+        )
         with st.form("login_form"):
             username = st.text_input("Username", placeholder="Enter your username")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
             submitted = st.form_submit_button("Sign in", use_container_width=True, type="primary")
-        st.caption("Need access? Contact your platform administrator.")
+        st.caption("For account access, contact your administrator.")
 
     if not submitted:
         return
@@ -190,11 +195,10 @@ def render_login_form(cookies: CookieManager) -> None:
 
     success, role = verify_credentials(username, password)
     if not success:
-        st.error("❌ Invalid username or password")
+        st.error("Invalid username or password.")
         return
 
     login_user(cookies, username, role or "user")
-    st.success(f"✅ Welcome, {username}!")
     st.rerun()
 
 

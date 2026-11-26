@@ -15,16 +15,44 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from cta_app.components.file_uploader import render_file_uploader
 from cta_app.components.footer import render_footer
 from cta_app.components.progress import render_progress_bar
-from cta_app.components.branding import ASSETS
 from cta_app.core.assets import get_base64_image, resolve_asset_path
 from cta_app.core.config import SESSION_DEFAULTS
-from cta_app.domain.columns import find_column, render_column_mapping
+from cta_app.domain.columns import find_column
+from cta_app.components.review import render_input_review
 from cta_app.domain.cta_matching import extract_campaign_ctas
 from cta_app.domain.validation import generate_cta_data, generate_cta_data_multi
 from cta_app.services.qa_export import build_qa_workbook
 from cta_app.ui.styles import render_cta_sync_styles
 
 AUDIENCE_OPTIONS = ["", "Healthcare Professionals", "Patients", "Caregivers"]
+
+STATUS_LABELS = {
+    "passed": "✓ Passed",
+    "warning": "! Warning",
+    "failed": "✕ Failed",
+    "missing": "? Missing",
+}
+
+
+def _page_heading(eyebrow: str, title: str, text: str) -> None:
+    st.markdown(
+        f'<div class="page-head"><div class="eyebrow">{eyebrow}</div>'
+        f"<h2>{title}</h2><p>{text}</p></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _nav_row(back_label: str | None, next_label: str, next_disabled: bool = False) -> tuple[bool, bool]:
+    back_col, _, next_col = st.columns([1, 2, 1])
+    back = bool(back_label) and back_col.button(back_label, type="secondary", use_container_width=True)
+    forward = next_col.button(next_label, type="primary", use_container_width=True, disabled=next_disabled)
+    return back, forward
+
+
+def _summary_value(value: str) -> str:
+    if value:
+        return f"<dd>{escape(value)}</dd>"
+    return '<dd class="empty">Not specified</dd>'
 
 
 def render_cta_sync_page():
@@ -34,18 +62,6 @@ def render_cta_sync_page():
         if key not in st.session_state:
             st.session_state[key] = value
 
-    hero_logo = get_base64_image(str(ASSETS / "cta_sync.png"))
-    st.markdown(
-        '<section class="workspace-hero workspace-hero-branded"><div class="hero-copy">'
-        '<div class="eyebrow">CTA Sync &middot; Campaign quality workspace</div>'
-        '<h1>Every CTA. Checked.</h1>'
-        '<p>Bring your campaign assets and Claravine tracking together. '
-        'Review links, resolve findings, and export a clear QA report.</p></div>'
-        f'<img class="hero-product-logo" src="data:image/png;base64,{hero_logo}" '
-        'alt="CTA Sync - Campaign CTA Validation Platform"></section>',
-        unsafe_allow_html=True,
-    )
-
     render_progress_bar()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -53,13 +69,10 @@ def render_cta_sync_page():
     # ══════════════════════════════════════════════════════════════════════════
     if st.session_state.current_step == 1:
         with st.container():
-            st.markdown(
-                '<h2 style="color: black; margin-top: 0;"><b>Upload Campaign Assets</b></h2>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                '<div class="alert-info">📁 Start with your campaign assets and the matching Claravine CSV. You can add multiple files to each panel.</div>',
-                unsafe_allow_html=True,
+            _page_heading(
+                "Step 1 of 4",
+                "Upload campaign assets",
+                "Add the campaign files to check and the Claravine tracking sheets to compare them against.",
             )
             render_file_uploader()
             claravine_stored = bool(st.session_state.get(
@@ -75,7 +88,7 @@ def render_cta_sync_page():
                     csv_df = pd.read_csv(BytesIO(first_bytes))
                 except Exception:
                     csv_df = None
-                    st.warning("Could not read csv file format.")
+                    st.warning("The Claravine file could not be read as a CSV.")
 
                 # ── Now safely extract campaign name ───────────────────────────────────
                 if csv_df is not None:
@@ -97,255 +110,100 @@ def render_cta_sync_page():
                             # st.success(f"✅ Campaign: **{campaign_values[0]}**")
 
                         elif len(campaign_values) > 1:
-                            st.warning(
-                                "⚠️ Multiple campaign names found in CSV. Please select one:"
+                            st.info(
+                                "This Claravine file covers more than one campaign. Choose the one to validate."
                             )
                             chosen = st.selectbox(
-                                "Select Campaign Name",
+                                "Campaign",
                                 options=campaign_values,
                                 key="campaign_name_selector",
                             )
                             st.session_state.campaign_name = chosen
 
                     else:
-                        st.warning(
-                            "⚠️ No 'campaign name' column (or variant like "
-                            "'campaign name -gsk') found in uploaded CSV."
+                        st.caption(
+                            "No campaign name column was found in the Claravine file; "
+                            "you can enter the name in the next step."
                         )
 
-            if st.session_state.campaign_files_data and claravine_stored:
-                col1, col2, col3 = st.columns([2, 1, 1])
-                with col3:
-                    if st.button(
-                        "Next Step →", use_container_width=True, type="primary"
-                    ):
-                        st.session_state.cta_data = None
-                        st.session_state.current_step = 2
-                        st.rerun()
+            _, forward = _nav_row(
+                None,
+                "Continue",
+                next_disabled=not (st.session_state.campaign_files_data and claravine_stored),
+            )
+            if forward:
+                st.session_state.cta_data = None
+                st.session_state.current_step = 2
+                st.rerun()
 
-        st.markdown('<div class="footer-wrap">', unsafe_allow_html=True)
         render_footer()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     #  Step 2 — Campaign Details
     # ══════════════════════════════════════════════════════════════════════════
     elif st.session_state.current_step == 2:
-        with st.container():
-            with st.form("campaign_info_form"):
-                st.markdown(
-                    '<div class="alert-info">Campaign Name is required. Other '
-                    'fields are optional but recommended for better '
-                    'tracking.</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    "<h2 style='color:black;'>Campaign Information</h2>",
-                    unsafe_allow_html=True,
-                )
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    campaign_name = st.text_input(
-                        "Campaign Name * (Required)",
-                        value=st.session_state.campaign_name,
-                        placeholder="Q4 2025 Brand Awareness",
-                    )
-                    indication = st.text_input(
-                        "Indication (Optional)",
-                        value=st.session_state.indication,
-                        placeholder="Type 2 Diabetes",
-                    )
-                with col2:
-                    brand_name = st.text_input(
-                        "Brand/Product (Optional)",
-                        value=st.session_state.brand_name,
-                        placeholder="BrandName™",
-                    )
-                    audience = st.selectbox(
-                        "Target Audience (Optional)",
-                        AUDIENCE_OPTIONS,
-                        index=AUDIENCE_OPTIONS.index(st.session_state.audience or ""),
-                    )
-
-                if audience:
-                    st.info(f"Active Campaign Target: **{audience}**")
-
-                st.form_submit_button("Save Campaign Info")
-
-            col1, col2, col3 = st.columns([1, 2, 1])
-            if col1.button("← Previous", type="primary"):
-                st.session_state.current_step = 1
-                st.rerun()
-            with col3:
-                if st.button(
-                    "Next Step →",
-                    type="primary",
-                    key="btn_next_step",
-                    disabled=not campaign_name,
-                    use_container_width=True,
-                ):
-                    st.session_state.campaign_name = campaign_name
-                    st.session_state.brand_name = brand_name
-                    st.session_state.indication = indication
-                    st.session_state.audience = audience
-                    st.session_state.current_step = 3
-                    st.rerun()
-
-        render_footer()
-    # ══════════════════════════════════════════════════════════════════════════
-    #  Step 3 — Campaign Summary + Column Mapping
-    # ══════════════════════════════════════════════════════════════════════════
-    elif st.session_state.current_step == 3:
-        with st.container():
-            st.markdown("## Review Campaign Summary")
-            st.caption("Edit any detail below; changes are saved automatically.")
-            col1, col2 = st.columns(2)
-            # Separate widget keys: Streamlit drops widget state when a step
-            # stops rendering it, which would wipe the shared session values.
-            with col1:
-                st.session_state.campaign_name = st.text_input(
-                    "Campaign Name * (Required)",
-                    value=st.session_state.campaign_name,
-                    key="review_campaign_name",
-                ).strip()
-                st.session_state.indication = st.text_input(
-                    "Indication (Optional)",
-                    value=st.session_state.indication,
-                    key="review_indication",
-                )
-            with col2:
-                st.session_state.brand_name = st.text_input(
-                    "Brand/Product (Optional)",
-                    value=st.session_state.brand_name,
-                    key="review_brand_name",
-                )
-                st.session_state.audience = st.selectbox(
-                    "Target Audience (Optional)",
+        _page_heading(
+            "Step 2 of 4",
+            "Campaign details",
+            "Name this review so the report is easy to identify. The other details are optional.",
+        )
+        with st.container(border=True):
+            left, right = st.columns(2)
+            with left:
+                campaign_name = st.text_input("Campaign name *", value=st.session_state.campaign_name, placeholder="Enter a campaign name")
+                indication = st.text_input("Indication", value=st.session_state.indication, placeholder="Optional")
+            with right:
+                brand_name = st.text_input("Brand / product", value=st.session_state.brand_name, placeholder="Optional")
+                audience = st.selectbox(
+                    "Target audience",
                     AUDIENCE_OPTIONS,
                     index=AUDIENCE_OPTIONS.index(st.session_state.audience or ""),
-                    key="review_audience",
+                    format_func=lambda option: option or "Not specified",
                 )
-            if not st.session_state.campaign_name:
-                st.error("❌ Campaign Name is required.")
-
-            st.divider()
-
-            campaign_files = st.session_state.get("campaign_files_data") or {}
-            claravine_files = st.session_state.get("claravine_files_data") or {}
-
-            # Parse every uploaded Claravine CSV into its own dataframe.
-            # Columns are mapped from the FIRST file; we assume all
-            # Claravine files share the same template (typical per campaign).
-            if claravine_files and "csv_dfs" not in st.session_state:
-                parsed: dict = {}
-                for csv_name, raw_bytes in claravine_files.items():
-                    df = pd.read_csv(io.BytesIO(raw_bytes))
-                    df.columns = df.columns.str.strip()
-                    parsed[csv_name] = df
-                st.session_state.csv_dfs = parsed
-            csv_dfs = st.session_state.get("csv_dfs") or {}
-
-            st.markdown("### Files to Validate")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Campaign files", len(campaign_files))
-            m2.metric("Claravine files", len(csv_dfs))
-            m3.metric("Claravine tracking rows", sum(len(df) for df in csv_dfs.values()))
-
-            files_col, csv_col = st.columns(2)
-            with files_col:
-                st.markdown("**Campaign assets**")
-                for name, data in campaign_files.items():
-                    st.markdown(f"- {escape(name)} ({len(data) / 1024:.1f} KB)")
-            with csv_col:
-                st.markdown("**Claravine files**")
-                for name, df in csv_dfs.items():
-                    st.markdown(f"- {escape(name)} ({len(df)} rows)")
-
-            if csv_dfs:
-                st.divider()
-                first_df = next(iter(csv_dfs.values()))
-                render_column_mapping(first_df)
-
-                mapped = [
-                    st.session_state.col_name,
-                    st.session_state.col_url,
-                    st.session_state.col_lp,
-                ]
-                if len(set(mapped)) < len(mapped):
-                    st.warning(
-                        "⚠️ The same column is mapped more than once. Check the "
-                        "mapping before starting validation."
-                    )
-                for csv_name, df in csv_dfs.items():
-                    missing_cols = [c for c in mapped if c not in df.columns]
-                    if missing_cols:
-                        st.error(
-                            f"❌ '{csv_name}' is missing mapped column(s): "
-                            f"{', '.join(missing_cols)}. All Claravine files must "
-                            "share the same columns."
-                        )
-
-                with st.expander("Preview Claravine data (first 5 rows)"):
-                    st.dataframe(
-                        first_df[list(dict.fromkeys(mapped))].head(5),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                st.markdown(
-                    '<div class="alert-success">✓ Ready to validate! CTA Sync will '
-                    f"check every CTA in {len(campaign_files)} campaign file(s) "
-                    f"against {len(csv_dfs)} Claravine file(s).</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.warning(
-                    "⚠️ No Claravine CSV found. Please go back to Step 1 and "
-                    "upload one or more."
-                )
-
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col1:
-                if st.button(
-                        "← Previous",
-                        use_container_width=True,
-                        type="primary",
-                ):
-                    st.session_state.current_step = 2
-                    st.rerun()
-            with col3:
-                # Only allow proceeding if at least one CSV is uploaded and
-                # columns mapped
-                can_proceed = (
-                    bool(st.session_state.campaign_name)
-                    and bool(csv_dfs)
-                    and bool(campaign_files)
-                    and st.session_state.get("col_name") is not None
-                    and all(
-                        c in df.columns
-                        for df in csv_dfs.values()
-                        for c in (
-                            st.session_state.col_name,
-                            st.session_state.col_url,
-                            st.session_state.col_lp,
-                        )
-                    )
-                )
-                if st.button(
-                    "Start Validation →",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not can_proceed,
-                ):
-                    # Mapping may have changed since a previous run.
-                    st.session_state.pop("cta_data_by_csv", None)
-                    st.session_state.current_step = 4
-                    st.rerun()
-
-        st.markdown('<div class="footer-wrap">', unsafe_allow_html=True)
+        back, forward = _nav_row("Back", "Continue", next_disabled=not campaign_name.strip())
+        if back or forward:
+            st.session_state.campaign_name = campaign_name.strip()
+            st.session_state.brand_name = brand_name
+            st.session_state.indication = indication
+            st.session_state.audience = audience
+            st.session_state.current_step = 1 if back else 3
+            st.rerun()
         render_footer()
-        st.markdown("</div>", unsafe_allow_html=True)
+
+    elif st.session_state.current_step == 3:
+        with st.container():
+            _page_heading(
+                "Step 3 of 4",
+                "Review and confirm",
+                "Check the campaign details, files and column mapping before validation starts.",
+            )
+            st.markdown(
+                '<div class="card"><dl class="summary-grid">'
+                f"<div><dt>Campaign</dt>{_summary_value(st.session_state.campaign_name)}</div>"
+                f"<div><dt>Brand / product</dt>{_summary_value(st.session_state.brand_name)}</div>"
+                f"<div><dt>Indication</dt>{_summary_value(st.session_state.indication)}</div>"
+                f"<div><dt>Target audience</dt>{_summary_value(st.session_state.audience)}</div>"
+                "</dl></div>",
+                unsafe_allow_html=True,
+            )
+
+            inputs_ready = render_input_review()
+
+            back, forward = _nav_row(
+                "Back",
+                "Start validation",
+                next_disabled=not (inputs_ready and st.session_state.campaign_name),
+            )
+            if back:
+                st.session_state.current_step = 2
+                st.rerun()
+            if forward:
+                # Mapping may have changed since a previous run.
+                st.session_state.pop("cta_data_by_csv", None)
+                st.session_state.current_step = 4
+                st.rerun()
+
+        render_footer()
 
     # ══════════════════════════════════════════════════════════════════════════
     #  Step 4 — Validation Results
@@ -357,27 +215,16 @@ def render_cta_sync_page():
             # ── Progress animation + run validation ───────────────────────
             if not st.session_state.get("cta_data_by_csv"):
 
-                st.markdown("## AI-Powered Validation in Progress")
-                stages = [
-                    "Extracting CTAs from HTML templates...",
-                    "Parsing Claravine tracking URLs...",
-                    "Matching against each Claravine file...",
-                    "Checking URL parameter compliance...",
-                ]
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                _val_start = time.time()
-
-                for idx, stage in enumerate(stages):
-                    status_text.markdown(f"### {stage}")
-                    progress_bar.progress(int(((idx + 1) / len(stages)) * 0.8 * 100))
-                    time.sleep(0.5)
-
-                status_text.markdown(
-                    "### Resolving tracking URLs and matching against Claravine..."
+                _page_heading(
+                    "Step 4 of 4",
+                    "Validating your campaign",
+                    "CTA Sync is extracting CTAs, resolving tracking links and comparing them with Claravine.",
                 )
-                progress_bar.progress(90)
-                with st.spinner("This can take a mooment for campaigns with many CTAs..."):
+                with st.status("Running validation…", expanded=True) as status:
+                    st.write("Extracting CTAs from campaign assets")
+                    st.write("Resolving tracking and landing-page URLs")
+                    st.write(f"Matching against {len(st.session_state.csv_dfs)} Claravine file(s)")
+                    started = time.time()
                     st.session_state.cta_data_by_csv = generate_cta_data_multi(
                         st.session_state.campaign_files_data,
                         st.session_state.csv_dfs,
@@ -385,10 +232,8 @@ def render_cta_sync_page():
                         st.session_state.col_url,
                         st.session_state.col_lp,
                     )
-                progress_bar.progress(100)
-                status_text.markdown("### Validation Complete")
-                time.sleep(0.3)
-                st.session_state.validation_time = round(time.time() - _val_start, 2)
+                    st.session_state.validation_time = round(time.time() - started, 2)
+                    status.update(label="Validation complete", state="complete")
                 st.rerun()
 
             # ── Display results ───────────────────────────────────────────
@@ -404,16 +249,16 @@ def render_cta_sync_page():
                         f = sum(
                             1 for r in rs if r.get("status") in ("failed", "missing")
                         )
-                        summary_bits.append(f"**{n}** — {p} ✓ / {f} ✗")
+                        summary_bits.append(f"<b>{escape(n)}</b>: {p} passed, {f} failed")
                     st.markdown(
                         '<div class="alert-info">Validated against '
-                        f"{len(csv_names)} Claravine files: "
+                        f"{len(csv_names)} Claravine files &middot; "
                         + " &nbsp;|&nbsp; ".join(summary_bits)
                         + "</div>",
                         unsafe_allow_html=True,
                     )
                     selected_csv = st.selectbox(
-                        "Showing results for Claravine file:",
+                        "Claravine reference",
                         csv_names,
                         key="selected_claravine_csv",
                     )
@@ -449,64 +294,65 @@ def render_cta_sync_page():
                     "campaign_name", "Campaign Validation"
                 )
                 val_time = st.session_state.get("validation_time", None)
-                time_str = f"{val_time:.2f}s" if val_time is not None else "—"
+                time_str = f"{val_time:.1f}s" if val_time is not None else "—"
+                pass_rate = round(passed / total * 100) if total else 0
+                meta = [
+                    st.session_state.get("brand_name"),
+                    st.session_state.get("audience"),
+                    f"{total} CTAs checked",
+                    f"Completed in {time_str}",
+                    datetime.now().strftime("%d %b %Y"),
+                ]
                 st.markdown(
-                    '<section class="workspace-hero"><div class="eyebrow">CTA Sync &middot; Validation report</div>'
-                    f'<h1>{escape(campaign_name)}</h1>'
-                    f'<p>{total} CTAs reviewed ? Completed in {time_str}</p></section>',
+                    '<section class="report-head"><div><div class="eyebrow">Step 4 of 4 &middot; Validation report</div>'
+                    f"<h1>{escape(campaign_name)}</h1><div class=\"report-meta\">"
+                    + "".join(f"<span>{escape(m)}</span>" for m in meta if m)
+                    + "</div></div>"
+                    f'<div class="report-score"><div class="value">{pass_rate}%</div>'
+                    '<div class="label">of CTAs passed all checks</div>'
+                    f'<div class="score-track"><div class="score-fill" style="width:{pass_rate}%"></div></div>'
+                    "</div></section>"
+                    '<div class="stat-row">'
+                    f'<div class="stat total"><span>Total CTAs</span><strong>{total}</strong></div>'
+                    f'<div class="stat ok"><span>Passed</span><strong>{passed}</strong></div>'
+                    f'<div class="stat warn"><span>Warnings</span><strong>{warnings}</strong></div>'
+                    f'<div class="stat bad"><span>Failed or waived</span><strong>{failed}</strong></div>'
+                    "</div>",
                     unsafe_allow_html=True,
                 )
-                for column, label, value in zip(
-                    st.columns(4),
-                    ["Total CTAs", "Passed", "Warnings", "Failed / waived"],
-                    [total, passed, warnings, failed],
-                ):
-                    with column:
-                        st.metric(label, value)
 
-                #  Quality score
-                # if quality_score >= 95:
-                #     quality_msg = "Excellent! Your campaign is ready for launch! 🎉"
-                # elif quality_score >= 85:
-                #     quality_msg = "Good quality. Review warnings before launch."
-                # elif quality_score >= 70:
-                #     quality_msg = "Needs attention. Please fix failed CTAs."
-                # else:
-                #     quality_msg = (
-                #         "Critical issues found. Review and fix before proceeding."
-                #     )
-                # st.markdown(
-                #     f'<div class="alert-info"><strong>Quality Score: {quality_score}/100</strong>'
-                #     f"<br>{quality_msg}</div>",
-                #     unsafe_allow_html=True,
-                # )
-
-                # ── Filter buttons ────────────────────────────────────────
-                st.markdown("## Detected CTAs — Review & Validate")
-                st.caption("Review each finding and its suggested fix. Use the Export column to select rows for export.")
-
-                fc1, fc2, fc3, fc4 = st.columns(4)
-                filter_buttons = [
-                    (fc1, f"All ({total})", "all"),
-                    (fc2, f"✓ Passed ({passed})", "passed"),
-                    (fc3, f"Warnings ({warnings})", "warning"),
-                    (fc4, f"✗ Failed ({failed})", "failed"),
-                ]
-                for col, label, key in filter_buttons:
-                    with col:
-                        btn_type = (
-                            "primary" if st.session_state.filter == key else "secondary"
-                        )
-                        if st.button(
-                            label,
-                            use_container_width=True,
-                            type=btn_type,
-                            key=f"flt_{key}",
-                        ):
-                            st.session_state.filter = key
-                            st.rerun()
+                st.markdown(
+                    '<div class="page-head"><h2>Findings</h2>'
+                    "<p>Review each finding and its suggested fix. Untick a row in the Export column to leave it out of the report.</p></div>",
+                    unsafe_allow_html=True,
+                )
+                filter_labels = {
+                    "all": f"All {total}",
+                    "passed": f"Passed {passed}",
+                    "warning": f"Warnings {warnings}",
+                    "failed": f"Failed {failed}",
+                }
+                if "results_filter" not in st.session_state:
+                    st.session_state.results_filter = st.session_state.filter
+                st.session_state.filter = (
+                    st.segmented_control(
+                        "Show",
+                        list(filter_labels),
+                        format_func=filter_labels.get,
+                        key="results_filter",
+                        label_visibility="collapsed",
+                    )
+                    or "all"
+                )
 
                 # ── CTA scrollable table ──────────────────────────────────
+                source_column, search_column = st.columns([1, 2])
+                sources = list(dict.fromkeys(c.get("source", "") for c in cta_data if c.get("source")))
+                with source_column:
+                    selected_source = st.selectbox("Campaign asset", ["All campaign assets", *sources], key="results_source")
+                with search_column:
+                    query = st.text_input("Search findings", placeholder="CTA name, URL, or issue", key="results_search").strip().lower()
+
                 chosen = st.session_state.filter
                 if chosen == "all":
                     filtered_ctas = cta_data
@@ -524,16 +370,15 @@ def render_cta_sync_page():
                         if c["status"] == chosen and c.get("checked", True)
                     ]
 
+                if selected_source != "All campaign assets":
+                    filtered_ctas = [c for c in filtered_ctas if c.get("source") == selected_source]
+                if query:
+                    filtered_ctas = [c for c in filtered_ctas if query in " ".join(str(c.get(k, "")) for k in ("text", "url", "issues", "matched_name")).lower()]
+
                 def display_status(c):
                     if not c.get("checked", True):
-                        return "❌ Waived / Failed"
-                    m = {
-                        "passed": "✅ Passed",
-                        "warning": "⚠️ Warning",
-                        "failed": "❌ Failed",
-                        "missing": "🔍 Missing",
-                    }
-                    return m.get(c["status"], "—")
+                        return "✕ Waived"
+                    return STATUS_LABELS.get(c["status"], "—")
 
                 if filtered_ctas:
 
@@ -548,19 +393,11 @@ def render_cta_sync_page():
                         issue_list = cta.get("issues", [])
                         if not issue_list:
                             return (
-                                "✓ " + cta["pass_reason"]
+                                cta["pass_reason"]
                                 if cta.get("pass_reason")
                                 else "—"
                             )
 
-                        status = cta.get("status", "failed")
-                        icon = (
-                            "⚠️"
-                            if status == "warning"
-                            else "🔎"
-                            if status == "missing"
-                            else "❌"
-                        )
                         prefix_multiple = len(issue_list) > 1
                         lines = []
                         for index, raw in enumerate(issue_list, 1):
@@ -569,10 +406,10 @@ def render_cta_sync_page():
                                 fix = (raw.get("fix") or "").strip()
                             else:
                                 reason, fix = str(raw).strip(), ""
-                            label = f"({index}) " if prefix_multiple else ""
-                            lines.append(f"{label}{icon} {reason}")
+                            label = f"{index}. " if prefix_multiple else ""
+                            lines.append(f"{label}{reason}")
                             if fix:
-                                lines.append(f"   🔧 Fix: {fix}")
+                                lines.append(f"   Fix: {fix}")
                         return "\n".join(lines)
 
                     table_rows = []
@@ -583,7 +420,7 @@ def render_cta_sync_page():
                             {
                                 "Export": True,  # ← checkbox column
                                 "CTA Text": esc(cta["text"], 80),
-                                "URL": esc(cta["url"], 120),
+                                "URL": esc(cta["url"]),
                                 "CSV Match": esc(cta.get("matched_name", "—"))
                                 + " (via "
                                 + esc(cta.get("matched_by", "—"))
@@ -597,18 +434,12 @@ def render_cta_sync_page():
 
                     display_df = pd.DataFrame(table_rows).drop(columns=["_cta_ref"])
 
-                    # ── Render interactive table with checkbox ────────────────
-                    st.markdown(
-                        "##### 📋 CTA Validation Results — check rows to "
-                        "include in export"
-                    )
-
                     edited_df = st.data_editor(
                         display_df,
                         use_container_width=True,
                         height=520,  # scrollable
                         hide_index=True,
-                        row_height=110,
+                        row_height=92,
                         column_config={
                             "Export": st.column_config.CheckboxColumn(
                                 "Export",
@@ -620,13 +451,13 @@ def render_cta_sync_page():
                                 "CTA Text", width="medium", disabled=True
                             ),
                             "URL": st.column_config.TextColumn(
-                                "URL", width="large", disabled=True
+                                "URL", width="medium", disabled=True
                             ),
                             "CSV Match": st.column_config.TextColumn(
                                 "CSV Match", width="medium", disabled=True
                             ),
                             "Source File": st.column_config.TextColumn(
-                                "Source File", width="small", disabled=True
+                                "Source File", width="medium", disabled=True
                             ),
                             "Reason & Fix": st.column_config.TextColumn(
                                 "Reason & Fix",
@@ -661,7 +492,7 @@ def render_cta_sync_page():
                     sel_count = selected_mask.sum()
                     total_count = len(filtered_ctas)
                     st.caption(
-                        f"✅ {sel_count} of {total_count} rows selected for export"
+                        f"{sel_count} of {total_count} rows selected for export"
                     )
 
                 else:
@@ -669,11 +500,12 @@ def render_cta_sync_page():
                     st.info("No CTAs match this filter.")
 
                 # ─── ACTION BUTTONS ───────────────────────────────────────────
-                col1, col2, col3 = st.columns(3)
+                col1, _, col2 = st.columns([1, 1, 1])
 
                 with col1:
                     if st.button(
-                            "🔄 Start New Validation",
+                            "Start a new validation",
+                            type="secondary",
                             use_container_width=True,
                     ):
                         keys_to_clear = [
@@ -688,6 +520,9 @@ def render_cta_sync_page():
                             "cta_data_by_csv",
                             "selected_claravine_csv",
                             "filter",
+                            "results_filter",
+                            "results_source",
+                            "results_search",
                             "campaign_id",
                             "html_ctas",
                             "claravine_data",
@@ -738,38 +573,20 @@ def render_cta_sync_page():
                             else f"Claravine_QA_{safe_name}_{timestamp}.xlsx"
                         )
                         st.download_button(
-                            label=f"📥 Export Claravine QA Report",
+                            label="Export QA report (.xlsx)",
                             data=qa_buffer,
                             file_name=download_name,
                             mime=(
                                 "application/vnd.openxmlformats-officedocument."
                                 "spreadsheetml.sheet"
                             ),
+                            type="primary",
                             use_container_width=True
                         )
                     else:
                         st.warning(
-                            "⚠️ No rows selected — check at least one row in the table above."
+                            "No rows selected. Tick at least one row in the table above."
                         )
-                with col3:
-                    active_ctas = [c for c in cta_data if c.get("checked", True)]
-                    checked_count = len(active_ctas)
-                    passed_checked = sum(
-                        1 for c in active_ctas if c["status"] == "passed"
-                    )
-                    warnings_checked = sum(
-                        1 for c in active_ctas if c["status"] == "warning"
-                    )
-                    failed_checked = sum(
-                        1 for c in active_ctas if c["status"] in ("failed", "missing")
-                    )
-                    # waived_count = sum(1 for c in cta_data if not c.get("checked", True))
 
-                    if st.button(
-                        f"✅ Approve ", type="primary", use_container_width=True
-                    ):
-                        st.success(f"""✅ Report Generated!""")
-
-                st.markdown('<div class="footer-wrap">', unsafe_allow_html=True)
+                st.caption("Review required: a matching result does not establish that the Claravine reference itself is correct.")
                 render_footer()
-                st.markdown("</div>", unsafe_allow_html=True)

@@ -2,7 +2,8 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="CTA Sync | Indegene",
+    page_title="CTA Sync · Indegene",
+    page_icon="assets/cta_sync_icon.png",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
