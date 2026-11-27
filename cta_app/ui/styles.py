@@ -85,7 +85,9 @@ button[kind="primary"]:hover,button[kind="primaryFormSubmit"]:hover {background:
 button[kind="secondary"],button[kind="secondaryFormSubmit"] {background:var(--surface); border:1px solid #cad5e4; color:var(--brand);}
 button[kind="secondary"]:hover {border-color:var(--brand); color:var(--brand-dark);}
 button:disabled {opacity:.45;}
-button:focus-visible,a:focus-visible,input:focus-visible {outline:3px solid var(--cyan) !important; outline-offset:2px;}
+button:focus-visible,a:focus-visible {outline:3px solid var(--cyan) !important; outline-offset:2px;}
+/* Text inputs and dropdowns already show a focus border; an outline on the inner input looked like a stray box */
+input:focus,input:focus-visible,[data-baseweb="select"] input:focus {outline:none !important; box-shadow:none !important;}
 
 /* Metrics and tables */
 [data-testid="stMetric"] {background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px;}
